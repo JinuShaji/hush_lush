@@ -1,0 +1,374 @@
+<!-- Standalone Instant Browser Preview -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hush Lush — Restaurant & Authentication App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-tap-highlight-color: transparent; }
+    .font-serif { font-family: 'Playfair Display', Georgia, serif; }
+    .font-script { font-family: 'Dancing Script', 'Great Vibes', cursive; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .text-shadow { text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7); }
+    @keyframes shake-anim {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .animate-shake { animation: shake-anim 0.4s ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col justify-between selection:bg-red-500 selection:text-white">
+  <div id="appRoot" class="flex-1 flex flex-col w-full"></div>
+  <div id="toastContainer" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 space-y-2 pointer-events-none"></div>
+
+  <script>
+    const AUTHORIZED_ACCOUNTS = [
+      { email: 'demo@hushlush.com', password: 'Password123', name: 'Sarah Jenkins', table: 'Table 13', pax: 4 }
+    ];
+
+    const STATE = {
+      user: null,
+      activeTab: 'menu',
+      selectedCategory: 'Chicken Chop',
+      cart: [],
+      orders: [],
+      promoSlide: 0,
+      showPassword: false,
+      authError: null,
+      emailError: null,
+      passError: null,
+      showCartDrawer: false
+    };
+
+    const PROMO_SLIDES = [
+      { title: 'UAE New Year Promo', subtitle: 'From March 1 to April 1', image: 'https://images.unsplash.com/photo-1562967914-608f82629710?q=80&w=1200&auto=format&fit=crop' },
+      { title: 'Grand Royal Biryani Feast', subtitle: '20% OFF on all Signature Platters', image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?q=80&w=1200&auto=format&fit=crop' },
+      { title: 'Smoky Charcoal Grill Days', subtitle: 'Free Mocktail with any BBQ Skewer', image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=1200&auto=format&fit=crop' }
+    ];
+
+    const CATEGORIES = ['For You', 'Chicken Chop', 'Fish', 'Burger', 'Briyani', 'Platters', 'Beverages'];
+
+    const FOOD_ITEMS = [
+      { id: 'item-1', name: '103 Black Pepper Chicken Chop', price: 6.90, category: 'Chicken Chop', image: 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?q=80&w=800&auto=format&fit=crop', isPopular: true },
+      { id: 'item-2', name: 'Chicken Dum Briyani', price: 10.02, category: 'Briyani', image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?q=80&w=800&auto=format&fit=crop', isPopular: true },
+      { id: 'item-3', name: 'Mandi Kozhi Porichu Briyani', price: 14.50, category: 'Briyani', image: 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=800&auto=format&fit=crop', isPopular: true },
+      { id: 'item-4', name: 'Chicken Spicy Tikka Masala', price: 12.80, category: 'Chicken Chop', image: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?q=80&w=800&auto=format&fit=crop', isPopular: false }
+    ];
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `p-3.5 rounded-2xl shadow-xl border text-xs font-semibold backdrop-blur-md transition-all duration-300 transform -translate-y-2 opacity-0 flex items-center justify-between gap-2.5 pointer-events-auto ${
+        type === 'success' ? 'bg-slate-900/95 text-white border-slate-700' : 'bg-red-950/95 text-white border-red-800'
+      }`;
+      toast.innerHTML = `<div class="flex items-center gap-2"><span>${type === 'success' ? '✅' : '⚠️'}</span><span>${message}</span></div>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.classList.remove('-translate-y-2', 'opacity-0'), 20);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function validateEmail(email) {
+      const trimmed = (email || '').trim();
+      if (!trimmed) return { isValid: false, error: 'Email address is required.' };
+      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+      if (!emailRegex.test(trimmed)) return { isValid: false, error: 'Please enter a valid email address.' };
+      return { isValid: true };
+    }
+
+    function validatePassword(pass) {
+      if (!pass) return { isValid: false, error: 'Password is required.' };
+      if (pass.length < 6) return { isValid: false, error: 'Password must be at least 6 characters long.' };
+      if (!/[a-zA-Z]/.test(pass) || !/\d/.test(pass)) return { isValid: false, error: 'Password must contain at least one letter and one number.' };
+      return { isValid: true };
+    }
+
+    function loginUser(email, pass) {
+      STATE.authError = null;
+      STATE.emailError = null;
+      STATE.passError = null;
+
+      const emailRes = validateEmail(email);
+      if (!emailRes.isValid) {
+        STATE.emailError = emailRes.error;
+        triggerShake();
+        render();
+        return false;
+      }
+
+      const passRes = validatePassword(pass);
+      if (!passRes.isValid) {
+        STATE.passError = passRes.error;
+        triggerShake();
+        render();
+        return false;
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      const userRecord = AUTHORIZED_ACCOUNTS.find(a => a.email.toLowerCase() === cleanEmail);
+
+      if (!userRecord || userRecord.password !== pass) {
+        STATE.authError = 'Access Denied: Invalid email or password.';
+        triggerShake();
+        render();
+        return false;
+      }
+
+      STATE.user = {
+        name: userRecord.name,
+        email: userRecord.email,
+        isGuest: false,
+        table: userRecord.table,
+        pax: userRecord.pax
+      };
+      showToast(`Welcome back, ${STATE.user.name}!`);
+      render();
+      return true;
+    }
+
+    function loginGuest() {
+      STATE.user = { name: 'Guest Diner', email: null, isGuest: true, table: 'Table 13', pax: 4 };
+      showToast('Signed in as Guest (Table 13)');
+      render();
+    }
+
+    function logoutUser() {
+      STATE.user = null;
+      STATE.cart = [];
+      STATE.authError = null;
+      showToast('Logged out');
+      render();
+    }
+
+    function triggerShake() {
+      const container = document.getElementById('loginCardBox');
+      if (container) {
+        container.classList.add('animate-shake');
+        setTimeout(() => container.classList.remove('animate-shake'), 450);
+      }
+    }
+
+    function addToCart(itemId, qty = 1) {
+      const food = FOOD_ITEMS.find(f => f.id === itemId);
+      if (!food) return;
+      const ex = STATE.cart.find(c => c.item.id === itemId);
+      if (ex) ex.quantity += qty;
+      else STATE.cart.push({ item: food, quantity: qty });
+      showToast(`Added ${qty}x ${food.name} to order`);
+      render();
+    }
+
+    function updateCartQty(itemId, delta) {
+      const idx = STATE.cart.findIndex(c => c.item.id === itemId);
+      if (idx > -1) {
+        STATE.cart[idx].quantity += delta;
+        if (STATE.cart[idx].quantity <= 0) STATE.cart.splice(idx, 1);
+      }
+      render();
+    }
+
+    function placeOrder() {
+      if (STATE.cart.length === 0) return;
+      const subtotal = STATE.cart.reduce((s, c) => s + c.item.price * c.quantity, 0);
+      const tax = subtotal * 0.05;
+      const total = subtotal + tax;
+      const order = {
+        id: 'HL-' + Math.floor(100000 + Math.random() * 900000),
+        items: [...STATE.cart],
+        subtotal,
+        tax,
+        total,
+        status: 'Preparing in Kitchen',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        table: STATE.user ? STATE.user.table : 'Table 13'
+      };
+      STATE.orders.unshift(order);
+      STATE.cart = [];
+      STATE.showCartDrawer = false;
+      showToast(`Order #${order.id} sent to kitchen!`);
+      render();
+    }
+
+    function render() {
+      const root = document.getElementById('appRoot');
+      if (!STATE.user) {
+        root.innerHTML = renderLoginScreen();
+        attachLoginEvents();
+      } else {
+        root.innerHTML = renderAppLayout();
+      }
+    }
+
+    function renderLoginScreen() {
+      return `
+        <div class="min-h-screen bg-slate-100 flex items-center justify-center p-4 sm:p-6 w-full">
+          <div id="loginCardBox" class="w-full max-w-[430px] bg-white rounded-3xl p-7 sm:p-9 shadow-xl border border-slate-100 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-center gap-3 mb-5">
+                <div class="w-14 h-14 flex items-center justify-center">
+                  <svg viewBox="0 0 100 100" class="w-full h-full text-red-600" fill="currentColor">
+                    <path d="M18 16 h14 v28 h24 v-28 h14 v68 h-14 v-28 h-24 v28 h-14 z" fill="#E52E2E" />
+                    <path d="M48 16 C66 4, 84 10, 92 24 C76 22, 64 30, 58 40 Z" fill="#E52E2E" />
+                    <path d="M56 58 h16 v14 h22 v12 h-38 z" fill="#E52E2E" />
+                  </svg>
+                </div>
+                <div class="w-[1px] h-11 bg-slate-300"></div>
+                <div>
+                  <h1 class="font-serif text-[26px] font-bold text-[#1A1A1A] leading-tight">Hush Lush</h1>
+                  <p class="text-[9px] font-bold tracking-[0.16em] text-red-600 uppercase">ADVERTISING & TECHNOLOGIES</p>
+                </div>
+              </div>
+
+              <p class="text-center text-[13px] text-slate-600 font-medium px-2 leading-relaxed mb-6">
+                Warely Pass Grants Access to Log in at any of Our Partnered Restaurants.
+              </p>
+
+              ${STATE.authError ? `
+                <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-start gap-2">
+                  <span class="text-sm">⚠️</span>
+                  <div><span>${STATE.authError}</span></div>
+                </div>
+              ` : ''}
+
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-sm font-bold text-slate-800 mb-1.5">Email</label>
+                  <input id="loginEmail" type="text" placeholder="Mail ID" class="w-full px-4 py-3 bg-white border ${STATE.emailError ? 'border-red-500 ring-2 ring-red-100 bg-red-50/20' : 'border-slate-200 focus:border-red-500'} rounded-xl text-sm focus:outline-none transition-all" />
+                  ${STATE.emailError ? `<p class="text-xs text-red-600 mt-1 font-medium">⚠️ ${STATE.emailError}</p>` : ''}
+                </div>
+
+                <div>
+                  <label class="block text-sm font-bold text-slate-800 mb-1.5">Password</label>
+                  <div class="relative">
+                    <input id="loginPassword" type="${STATE.showPassword ? 'text' : 'password'}" placeholder="Password" class="w-full pl-4 pr-11 py-3 bg-white border ${STATE.passError ? 'border-red-500 ring-2 ring-red-100 bg-red-50/20' : 'border-slate-200 focus:border-red-500'} rounded-xl text-sm focus:outline-none transition-all" />
+                    <button id="btnTogglePass" class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                      ${STATE.showPassword ? '🙈' : '👁️'}
+                    </button>
+                  </div>
+                  ${STATE.passError ? `<p class="text-xs text-red-600 mt-1 font-medium">⚠️ ${STATE.passError}</p>` : ''}
+                  <div class="flex justify-end mt-1.5">
+                    <span class="text-xs text-red-600 hover:underline font-medium cursor-pointer">Use Email-ID Instead</span>
+                  </div>
+                </div>
+
+                <div class="text-center text-slate-400 text-xs py-1 font-medium">Or</div>
+
+                <div class="flex justify-center items-center gap-3">
+                  <button onclick="loginUser('demo@hushlush.com', 'Password123')" class="w-13 h-10 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-50 cursor-pointer text-blue-600 font-bold">f</button>
+                  <button onclick="loginUser('demo@hushlush.com', 'Password123')" class="w-13 h-10 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-50 cursor-pointer text-sky-500 font-bold">✈</button>
+                  <button onclick="loginUser('demo@hushlush.com', 'Password123')" class="w-13 h-10 border border-slate-200 rounded-xl flex items-center justify-center hover:bg-slate-50 cursor-pointer text-red-500 font-bold">G</button>
+                </div>
+
+                <p class="text-center text-[11px] text-slate-600 pt-2 leading-tight">
+                  By ordering, You have Read and Agreement to Our 
+                  <span class="text-red-600 underline font-semibold cursor-pointer">Terms of Use</span> and 
+                  <span class="text-red-600 underline font-semibold cursor-pointer">Privacy Policy</span>
+                </p>
+
+                <button id="btnSubmit" class="w-full py-3.5 bg-[#E52E2E] hover:bg-red-700 text-white font-bold text-sm rounded-xl shadow-md cursor-pointer transition-all active:scale-[0.99]">
+                  Submit
+                </button>
+
+                <div class="text-center pt-1">
+                  <button onclick="loginGuest()" class="text-sm font-medium text-slate-800 hover:text-red-600 underline cursor-pointer">
+                    Sign as Guest
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-center pt-6 mt-4 border-t border-slate-100 flex items-center justify-center gap-1">
+              <span class="text-xs text-slate-500 font-medium">Powered By</span>
+              <span class="font-serif italic text-red-600 font-bold text-xs">Hush Lush</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function attachLoginEvents() {
+      const emailInput = document.getElementById('loginEmail');
+      const passInput = document.getElementById('loginPassword');
+      const btnSubmit = document.getElementById('btnSubmit');
+      const btnToggle = document.getElementById('btnTogglePass');
+
+      if (btnToggle) {
+        btnToggle.onclick = () => {
+          STATE.showPassword = !STATE.showPassword;
+          render();
+        };
+      }
+      if (btnSubmit) {
+        btnSubmit.onclick = () => {
+          loginUser(emailInput.value, passInput.value);
+        };
+      }
+    }
+
+    function renderAppLayout() {
+      const totalCount = STATE.cart.reduce((s, c) => s + c.quantity, 0);
+      const slide = PROMO_SLIDES[STATE.promoSlide];
+      const filtered = STATE.selectedCategory === 'For You'
+        ? FOOD_ITEMS.filter(f => f.isPopular)
+        : FOOD_ITEMS.filter(f => f.category === STATE.selectedCategory);
+
+      return `
+        <div class="w-full min-h-screen bg-slate-50 relative pb-24 max-w-2xl mx-auto shadow-sm border-x border-slate-100">
+          <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex items-center justify-between shadow-xs">
+            <div class="w-10 h-10 bg-white rounded-xl shadow-md border border-slate-100 flex items-center justify-center p-1.5">
+              <svg viewBox="0 0 100 100" class="w-full h-full text-red-600" fill="currentColor">
+                <path d="M18 16 h14 v28 h24 v-28 h14 v68 h-14 v-28 h-24 v28 h-14 z" fill="#E52E2E" />
+                <path d="M48 16 C66 4, 84 10, 92 24 C76 22, 64 30, 58 40 Z" fill="#E52E2E" />
+                <path d="M56 58 h16 v14 h22 v12 h-38 z" fill="#E52E2E" />
+              </svg>
+            </div>
+            <div class="font-bold text-slate-800 text-[15px]">${STATE.user.table} (${STATE.user.pax} PAX)</div>
+            <div class="text-base text-slate-700">🔍</div>
+          </header>
+
+          <div class="p-3.5 grid grid-cols-2 gap-3.5">
+            ${filtered.map(food => `
+              <div class="group bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between overflow-hidden">
+                <div class="relative w-full aspect-[4/3] bg-slate-100 overflow-hidden">
+                  <img src="${food.image}" alt="${food.name}" class="w-full h-full object-cover" />
+                  <button onclick="addToCart('${food.id}', 1)" class="absolute bottom-2.5 right-2.5 w-8 h-8 rounded-full bg-black/50 text-white hover:bg-[#E52E2E] flex items-center justify-center shadow-md font-bold">+</button>
+                </div>
+                <div class="p-3 flex-1 flex items-center">
+                  <h3 class="font-bold text-slate-800 text-[13.5px] leading-snug line-clamp-2">${food.name}</h3>
+                </div>
+                <div class="bg-[#FFF5F5] px-3 py-2.5 flex items-center justify-between border-t border-red-50">
+                  <span class="font-bold text-[#E52E2E] text-[15px]">$${food.price.toFixed(2)}</span>
+                  <span class="text-[#E52E2E] text-xs font-bold">→</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="fixed bottom-20 right-5 z-40">
+            <button onclick="STATE.showCartDrawer = true; render()" class="relative w-14 h-14 rounded-full bg-neutral-600/85 hover:bg-neutral-700 backdrop-blur-md text-white shadow-xl flex items-center justify-center active:scale-95 cursor-pointer border border-white/20">
+              <span class="text-2xl">🛒</span>
+              ${totalCount > 0 ? `<span class="absolute -top-1 -right-1 bg-red-600 text-white text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md">${totalCount}</span>` : ''}
+            </button>
+          </div>
+
+          <div class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-nav max-w-2xl mx-auto p-2.5 flex justify-between items-center text-xs">
+            <span class="font-semibold text-slate-700">${STATE.user.name}</span>
+            <button onclick="logoutUser()" class="text-red-600 font-bold">Log Out</button>
+          </div>
+        </div>
+      `;
+    }
+
+    render();
+  </script>
+</body>
+</html>
